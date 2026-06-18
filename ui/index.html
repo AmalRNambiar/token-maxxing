@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Token Maxxing</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <div class="panel">
+      <header class="bar" data-tauri-drag-region>
+        <span class="flame" id="flame" data-tauri-drag-region>🔥</span>
+        <span class="status" id="status" data-tauri-drag-region>idle</span>
+        <button id="close" title="Close">×</button>
+      </header>
+
+      <div class="today">
+        <span class="today-num" id="today-num">0</span>
+        <span class="today-label">tokens today</span>
+      </div>
+
+      <div class="alltime">
+        <span class="sigma">Σ</span>
+        <span id="total-num">0</span>
+        <span class="alltime-label">all time</span>
+      </div>
+
+      <ul id="rows" class="rows">
+        <li class="empty">waiting for activity…</li>
+      </ul>
+    </div>
+
+    <script src="main.js"></script>
+  </body>
+</html>
