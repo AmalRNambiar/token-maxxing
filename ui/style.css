@@ -63,6 +63,8 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  opacity: 1;
+  transition: opacity 0.3s ease;
 }
 #close {
   background: none;

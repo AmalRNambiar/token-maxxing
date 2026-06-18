@@ -20,7 +20,35 @@ function fmt(n) {
   return String(n);
 }
 
-// --- funny status tiers based on tokens used today ---
+// --- rotating header titles (cycled on a loop) ---
+const TITLES = [
+  "TOKEN MAXXING 🔥",
+  "burning the budget 💸",
+  "feeding the machine 🤖",
+  "context go brrr 🌀",
+  "tokens go yeet 🚀",
+  "just one more prompt 🤏",
+  "maxxing responsibly 😇",
+  "GPU goes brrr 🔥",
+  "number must go up 📈",
+];
+
+function startTitleLoop() {
+  const el = document.getElementById("status");
+  let i = 0;
+  const tick = () => {
+    el.style.opacity = "0";
+    setTimeout(() => {
+      el.textContent = TITLES[i % TITLES.length];
+      el.style.opacity = "1";
+      i++;
+    }, 300);
+  };
+  tick();
+  setInterval(tick, 3000);
+}
+
+// --- funny status tiers based on tokens used today (drives flame intensity) ---
 function tier(today) {
   if (today === 0) return { text: "idle 💤", maxing: false };
   if (today < 10_000) return { text: "warming up 🌱", maxing: false };
@@ -66,9 +94,8 @@ function render(p) {
     shown.total = p.total;
   }
 
-  const t = tier(p.today);
-  statusEl.textContent = t.text;
-  panel.classList.toggle("maxing", t.maxing);
+  // Title text rotates on its own loop; here we only set flame intensity.
+  panel.classList.toggle("maxing", tier(p.today).maxing);
 
   const list = document.getElementById("rows");
   if (!p.rows.length) {
@@ -86,6 +113,8 @@ function render(p) {
     )
     .join("");
 }
+
+startTitleLoop();
 
 event.listen("usage-update", (e) => render(e.payload));
 
