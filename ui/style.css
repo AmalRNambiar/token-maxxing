@@ -6,6 +6,7 @@
   --hot: #ff8a4c;
   --claude: #d97757;
   --codex: #74aa9c;
+  --gemini: #4e8cff;
 }
 
 * {
@@ -151,6 +152,9 @@ body {
 }
 .row .tag.codex {
   background: var(--codex);
+}
+.row .tag.gemini {
+  background: var(--gemini);
 }
 .row .name {
   overflow: hidden;

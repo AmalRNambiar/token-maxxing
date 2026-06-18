@@ -9,7 +9,7 @@
 // totals are recomputed from scratch each launch (no persistence, no double
 // counting within a run).
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
 use std::path::PathBuf;
@@ -50,6 +50,7 @@ pub fn run(app: AppHandle) {
     };
     let claude_glob = format!("{}/.claude/projects/**/*.jsonl", home.display());
     let codex_glob = format!("{}/.codex/sessions/**/rollout-*.jsonl", home.display());
+    let gemini_glob = format!("{}/.gemini/tmp/**/chats/session-*.jsonl", home.display());
 
     // Per-file byte offset already consumed.
     let mut offsets: HashMap<PathBuf, u64> = HashMap::new();
@@ -57,6 +58,10 @@ pub fn run(app: AppHandle) {
     let mut codex_last: HashMap<PathBuf, (u64, u64)> = HashMap::new();
     // Resolved model name per Codex session file.
     let mut codex_model: HashMap<PathBuf, String> = HashMap::new();
+    // Claude logs each assistant message ~twice; dedupe by requestId.
+    let mut claude_seen: HashSet<String> = HashSet::new();
+    // Gemini writes some turns twice; dedupe by message id.
+    let mut gemini_seen: HashSet<String> = HashSet::new();
     // Aggregated all-time totals keyed by (client, model).
     let mut totals: HashMap<(String, String), Totals> = HashMap::new();
     // Tokens used today (UTC); resets when the date rolls over.
@@ -83,7 +88,11 @@ pub fn run(app: AppHandle) {
         for path in glob::glob(&claude_glob).into_iter().flatten().flatten() {
             if let Some(chunk) = read_new(&path, &mut offsets) {
                 for line in chunk.lines() {
-                    if let Some((model, inp, out)) = parse_claude_line(line) {
+                    if let Some((key, model, inp, out)) = parse_claude_line(line) {
+                        // Claude logs each assistant message ~twice; count requestId once.
+                        if !claude_seen.insert(key) {
+                            continue;
+                        }
                         let t = totals.entry(("claude".into(), model)).or_default();
                         t.input += inp;
                         t.output += out;
@@ -126,6 +135,27 @@ pub fn run(app: AppHandle) {
                             }
                             changed = true;
                         }
+                    }
+                }
+            }
+        }
+
+        // ---- Gemini CLI ----
+        for path in glob::glob(&gemini_glob).into_iter().flatten().flatten() {
+            if let Some(chunk) = read_new(&path, &mut offsets) {
+                for line in chunk.lines() {
+                    if let Some((id, model, inp, out)) = parse_gemini_line(line) {
+                        // Gemini logs some turns twice; count each message id once.
+                        if !gemini_seen.insert(id) {
+                            continue;
+                        }
+                        let t = totals.entry(("gemini".into(), model)).or_default();
+                        t.input += inp;
+                        t.output += out;
+                        if line_is_today(line, &today_date) {
+                            today_total += inp + out;
+                        }
+                        changed = true;
                     }
                 }
             }
@@ -187,28 +217,59 @@ fn read_new(path: &PathBuf, offsets: &mut HashMap<PathBuf, u64>) -> Option<Strin
     Some(complete.to_string())
 }
 
-/// Parse a Claude Code assistant line -> (model, input_total, output_total).
-fn parse_claude_line(line: &str) -> Option<(String, u64, u64)> {
+/// Parse a Claude Code assistant line -> (dedupe_key, model, input, output).
+/// Excludes `cache_read_input_tokens`: those are the same context re-read each
+/// turn (billed at a fraction), so counting them inflates totals 10x+. We count
+/// fresh tokens only: new input + cache creation + output.
+fn parse_claude_line(line: &str) -> Option<(String, String, u64, u64)> {
     let v: Value = serde_json::from_str(line).ok()?;
     if v.get("type")?.as_str()? != "assistant" {
         return None;
     }
+    let key = v
+        .get("requestId")
+        .and_then(Value::as_str)
+        .or_else(|| v.get("uuid").and_then(Value::as_str))
+        .unwrap_or_default()
+        .to_string();
     let msg = v.get("message")?;
     let model = msg.get("model")?.as_str()?.to_string();
     let u = msg.get("usage")?;
-    let input = field(u, "input_tokens")
-        + field(u, "cache_read_input_tokens")
-        + field(u, "cache_creation_input_tokens");
+    let input = field(u, "input_tokens") + field(u, "cache_creation_input_tokens");
     let output = field(u, "output_tokens");
-    Some((model, input, output))
+    Some((key, model, input, output))
 }
 
 /// Parse a Codex line carrying cumulative usage -> (cum_input, cum_output).
+/// Subtracts cached input (re-read context, usually ~all of it) so we count
+/// only fresh full-rate tokens, consistent with the other clients.
 fn parse_codex_usage(line: &str) -> Option<(u64, u64)> {
     let v: Value = serde_json::from_str(line).ok()?;
     let payload = v.get("payload").unwrap_or(&v);
     let ttu = payload.get("info")?.get("total_token_usage")?;
-    Some((field(ttu, "input_tokens"), field(ttu, "output_tokens")))
+    let input = field(ttu, "input_tokens").saturating_sub(field(ttu, "cached_input_tokens"));
+    Some((input, field(ttu, "output_tokens")))
+}
+
+/// Parse a Gemini CLI assistant line -> (msg_id, model, input_total, output_total).
+/// `tokens.input` already includes the full prompt context for that turn, so
+/// summing per-turn totals reflects real per-request billing.
+fn parse_gemini_line(line: &str) -> Option<(String, String, u64, u64)> {
+    let v: Value = serde_json::from_str(line).ok()?;
+    if v.get("type")?.as_str()? != "gemini" {
+        return None;
+    }
+    let id = v.get("id")?.as_str()?.to_string();
+    let model = v
+        .get("model")
+        .and_then(Value::as_str)
+        .unwrap_or("gemini")
+        .to_string();
+    let tk = v.get("tokens")?;
+    // `cached` is a re-read subset of `input`; subtract it to count fresh tokens.
+    let input = field(tk, "input").saturating_sub(field(tk, "cached"));
+    let output = field(tk, "output") + field(tk, "thoughts") + field(tk, "tool");
+    Some((id, model, input, output))
 }
 
 /// Look for a model name within a freshly read chunk.

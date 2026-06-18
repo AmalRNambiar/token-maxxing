@@ -27,7 +27,7 @@ function tier(today) {
   if (today < 100_000) return { text: "cooking 🍳", maxing: false };
   if (today < 1_000_000) return { text: "TOKEN MAXING 🚀", maxing: true };
   if (today < 5_000_000) return { text: "going nuclear 🤯", maxing: true };
-  return { text: "TOKEN MAXXING 🔥", maxing: true };
+  return { text: "TOKEN MAXXING", maxing: true };
 }
 
 const shortModel = (m) =>

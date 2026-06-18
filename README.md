@@ -17,13 +17,28 @@ changes, no API keys.
 ## Supported clients
 
 | Client      | Source                                 | Status |
-| ----------- | -------------------------------------- | ------ |
-| Claude Code | `~/.claude/projects/**/*.jsonl`        | ✅     |
-| Codex CLI   | `~/.codex/sessions/**/rollout-*.jsonl` | ✅     |
+| ----------- | -------------------------------------------- | ------ |
+| Claude Code | `~/.claude/projects/**/*.jsonl`              | ✅     |
+| Codex CLI   | `~/.codex/sessions/**/rollout-*.jsonl`       | ✅     |
+| Gemini CLI  | `~/.gemini/tmp/**/chats/session-*.jsonl`     | ✅     |
+| Antigravity | protobuf blobs in SQLite — no readable usage | ❌     |
+| Cursor      | metered server-side / web app has no local log | ❌   |
 
 Adding a client = one more glob + parse function in `src-tauri/src/tailer.rs`.
-Closed clients (Cursor, ChatGPT desktop) keep no local usage log; they'd need a
-local API proxy.
+
+**Not supportable locally:** Antigravity stores generation metadata as
+undocumented protobuf blobs (`~/.gemini/antigravity-cli/conversations/*.db`),
+with no token fields in plaintext. Cursor (and ChatGPT desktop / web) meter
+usage server-side and keep no local token log. These would need a local API
+proxy or the provider's usage API.
+
+## How counting works
+
+The widget counts **fresh, full-rate tokens** — new input + cache-creation +
+output — and **excludes cache reads** (the same context re-sent each turn,
+billed at a fraction). Claude messages are also deduped by `requestId` (the log
+records each one ~twice). This keeps totals close to what you actually spent; a
+provider dashboard may show a larger figure because it also counts cache reads.
 
 ## Install (end users)
 
