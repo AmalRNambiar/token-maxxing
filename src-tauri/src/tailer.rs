@@ -218,9 +218,12 @@ fn read_new(path: &PathBuf, offsets: &mut HashMap<PathBuf, u64>) -> Option<Strin
 }
 
 /// Parse a Claude Code assistant line -> (dedupe_key, model, input, output).
-/// Excludes `cache_read_input_tokens`: those are the same context re-read each
-/// turn (billed at a fraction), so counting them inflates totals 10x+. We count
-/// fresh tokens only: new input + cache creation + output.
+/// Counts only genuinely new tokens: `input_tokens` (uncached prompt delta) +
+/// `output_tokens`. Both cache fields are excluded:
+///   - `cache_read`: same context re-read every turn (re-counts context).
+///   - `cache_creation`: context (re)written to cache; on the 5-min TTL expiry
+///     the *entire* context is re-cached, spiking one turn by 100k+ even for a
+///     tiny prompt. Counting it makes "spent 10k" read as "way more".
 fn parse_claude_line(line: &str) -> Option<(String, String, u64, u64)> {
     let v: Value = serde_json::from_str(line).ok()?;
     if v.get("type")?.as_str()? != "assistant" {
@@ -235,7 +238,7 @@ fn parse_claude_line(line: &str) -> Option<(String, String, u64, u64)> {
     let msg = v.get("message")?;
     let model = msg.get("model")?.as_str()?.to_string();
     let u = msg.get("usage")?;
-    let input = field(u, "input_tokens") + field(u, "cache_creation_input_tokens");
+    let input = field(u, "input_tokens");
     let output = field(u, "output_tokens");
     Some((key, model, input, output))
 }
