@@ -1,8 +1,12 @@
 # token-maxxing 🔥
 
-A tiny always-on-top widget that shows live AI token usage across your local
-CLI clients. Reads each client's local session logs — no proxy, no client
-changes, no API keys.
+**Live token tracking for AI CLI clients.** A tiny always-on-top widget for
+token tracking across your local AI tools — it shows live token usage across
+your CLI clients (Claude Code, Codex, Gemini CLI). Reads each client's local
+session logs — no proxy, no client changes, no API keys.
+
+Keywords: token tracking, token usage tracker, LLM token counter, AI token
+monitor, Claude Code / Codex / Gemini CLI usage.
 
 ![status: TOKEN MAXXING](https://img.shields.io/badge/status-TOKEN%20MAXXING-orange)
 
