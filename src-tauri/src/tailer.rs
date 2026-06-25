@@ -19,7 +19,22 @@ use serde::Serialize;
 use serde_json::Value;
 use tauri::{AppHandle, Emitter, Manager};
 
-const POLL_INTERVAL: Duration = Duration::from_millis(1500);
+const POLL_INTERVAL: Duration = Duration::from_millis(400);
+// Daily token budget the "today" bar fills against. No local source exists for
+// the real plan limit (server-side), so it's a configurable target: override with
+// the TOKEN_MAXX_DAILY_LIMIT env var, else this default.
+const DEFAULT_DAILY_LIMIT: u64 = 1_000_000;
+
+fn daily_limit() -> u64 {
+    std::env::var("TOKEN_MAXX_DAILY_LIMIT")
+        .ok()
+        .and_then(|s| s.trim().parse::<u64>().ok())
+        .filter(|&n| n > 0)
+        .unwrap_or(DEFAULT_DAILY_LIMIT)
+}
+// Re-assert always-on-top this often (not every poll): re-applying the WM hint
+// steals focus and can interrupt an in-progress drag/click on the widget.
+const REASSERT_EVERY: Duration = Duration::from_secs(5);
 
 #[derive(Default, Clone)]
 struct Totals {
@@ -39,6 +54,7 @@ struct UsageRow {
 #[derive(Serialize, Clone)]
 struct Payload {
     today: u64,
+    limit: u64,
     total: u64,
     rows: Vec<UsageRow>,
 }
@@ -67,12 +83,25 @@ pub fn run(app: AppHandle) {
     // Tokens used today (UTC); resets when the date rolls over.
     let mut today_total: u64 = 0;
     let mut today_date = utc_today();
+    let mut last_reassert = std::time::Instant::now() - REASSERT_EVERY;
 
     loop {
         // Re-assert always-on-top: some Linux WMs drop the hint on focus changes.
-        if let Some(win) = app.get_webview_window("main") {
-            let _ = win.set_always_on_top(true);
-            let _ = win.set_visible_on_all_workspaces(true);
+        // GTK is not thread-safe, so window ops MUST run on the main thread —
+        // calling them from this background thread races GTK and freezes the
+        // window (drag/close stop responding). Throttle so re-applying the hint
+        // doesn't steal focus mid-drag.
+        if last_reassert.elapsed() >= REASSERT_EVERY {
+            last_reassert = std::time::Instant::now();
+            let _ = app.run_on_main_thread({
+                let app = app.clone();
+                move || {
+                    if let Some(win) = app.get_webview_window("main") {
+                        let _ = win.set_always_on_top(true);
+                        let _ = win.set_visible_on_all_workspaces(true);
+                    }
+                }
+            });
         }
 
         // Midnight rollover: drop yesterday's tally; new events accrue fresh.
@@ -178,6 +207,7 @@ pub fn run(app: AppHandle) {
                 "usage-update",
                 Payload {
                     today: today_total,
+                    limit: daily_limit(),
                     total,
                     rows,
                 },

@@ -94,6 +94,16 @@ function render(p) {
     shown.total = p.total;
   }
 
+  // Daily usage bar: today vs configurable limit.
+  if (p.limit > 0) {
+    const pct = Math.min((p.today / p.limit) * 100, 100);
+    const fill = document.getElementById("limit-fill");
+    fill.style.width = pct.toFixed(1) + "%";
+    fill.classList.toggle("over", p.today >= p.limit);
+    document.getElementById("limit-label").textContent =
+      `${pct.toFixed(0)}% · ${fmt(p.today)} / ${fmt(p.limit)}`;
+  }
+
   // Title text rotates on its own loop; here we only set flame intensity.
   panel.classList.toggle("maxing", tier(p.today).maxing);
 

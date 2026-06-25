@@ -104,6 +104,34 @@ body {
   color: var(--muted);
 }
 
+/* daily usage bar */
+.limit {
+  margin: 4px 0 6px;
+}
+.limit-track {
+  height: 5px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+}
+.limit-fill {
+  height: 100%;
+  width: 0;
+  border-radius: 3px;
+  background: linear-gradient(90deg, var(--accent), var(--hot));
+  transition: width 0.6s ease;
+}
+.limit-fill.over {
+  background: var(--hot);
+}
+.limit-label {
+  display: block;
+  margin-top: 3px;
+  font-size: 10px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
 /* all time */
 .alltime {
   display: flex;
