@@ -82,7 +82,7 @@ pub fn run(app: AppHandle) {
     let mut totals: HashMap<(String, String), Totals> = HashMap::new();
     // Tokens used today (UTC); resets when the date rolls over.
     let mut today_total: u64 = 0;
-    let mut today_date = utc_today();
+    let mut today_date = today_local();
     let mut last_reassert = std::time::Instant::now() - REASSERT_EVERY;
 
     loop {
@@ -105,13 +105,15 @@ pub fn run(app: AppHandle) {
         }
 
         // Midnight rollover: drop yesterday's tally; new events accrue fresh.
-        let now_date = utc_today();
+        // Force an emit so the UI resets to 0 even with no new activity (else it
+        // keeps showing yesterday's number until the next request).
+        let now_date = today_local();
+        let mut changed = false;
         if now_date != today_date {
             today_date = now_date;
             today_total = 0;
+            changed = true;
         }
-
-        let mut changed = false;
 
         // ---- Claude Code ----
         for path in glob::glob(&claude_glob).into_iter().flatten().flatten() {
@@ -324,19 +326,24 @@ fn field(v: &Value, key: &str) -> u64 {
     v.get(key).and_then(Value::as_u64).unwrap_or(0)
 }
 
-/// Current UTC date as "YYYY-MM-DD".
-fn utc_today() -> String {
-    chrono::Utc::now().format("%Y-%m-%d").to_string()
+/// Current *local* date as "YYYY-MM-DD" — rolls over at the user's midnight.
+fn today_local() -> String {
+    chrono::Local::now().format("%Y-%m-%d").to_string()
 }
 
-/// True if the line's top-level ISO `timestamp` falls on `today` (UTC date).
+/// True if the line's top-level ISO `timestamp` falls on `today` (local date).
+/// Logs write timestamps in UTC (`...Z`); convert to local before comparing so
+/// "today" matches the user's calendar day, not UTC's.
 fn line_is_today(line: &str, today: &str) -> bool {
-    serde_json::from_str::<Value>(line)
-        .ok()
-        .and_then(|v| {
-            v.get("timestamp")
-                .and_then(Value::as_str)
-                .map(|ts| ts.len() >= 10 && &ts[..10] == today)
-        })
-        .unwrap_or(false)
+    let Ok(v) = serde_json::from_str::<Value>(line) else {
+        return false;
+    };
+    let Some(ts) = v.get("timestamp").and_then(Value::as_str) else {
+        return false;
+    };
+    if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(ts) {
+        return dt.with_timezone(&chrono::Local).format("%Y-%m-%d").to_string() == today;
+    }
+    // Fallback: compare the raw date prefix if the timestamp isn't RFC3339.
+    ts.len() >= 10 && &ts[..10] == today
 }
